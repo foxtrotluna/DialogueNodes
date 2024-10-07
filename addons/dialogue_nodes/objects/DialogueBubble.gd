@@ -31,7 +31,7 @@ signal dialogue_ended
 	set(value):
 		data = value
 		if _dialogue_parser:
-			_dialogue_parser.set_data(data)
+			_dialogue_parser.data = value
 			variables = _dialogue_parser.variables
 			characters = _dialogue_parser.characters
 ## The default start ID to begin dialogue from. This is the value you set in the Dialogue Nodes editor.
@@ -102,12 +102,6 @@ signal dialogue_ended
 		options_container.position.y = 32
 ## Icon displayed when no text options are available.
 @export var next_icon := preload('res://addons/dialogue_nodes/icons/Play.svg')
-## Skip condition checks when processing options in the current dialog.
-@export var skip_options_condition_checks := false :
-	set(value):
-		skip_options_condition_checks = value
-		if _dialogue_parser:
-			_dialogue_parser.skip_options_condition_checks = value
 
 ## Contains the variable data from the [param DialogueData] parsed in an easy to access dictionary.[br]
 ## Example: [code]{ "COINS": 10, "NAME": "Obama", "ALIVE": true }[/code]
@@ -182,7 +176,6 @@ func _enter_tree():
 	_dialogue_parser.data = data
 	variables = _dialogue_parser.variables
 	characters = _dialogue_parser.characters
-	skip_options_condition_checks = skip_options_condition_checks
 	
 	_dialogue_parser.dialogue_started.connect(_on_dialogue_started)
 	_dialogue_parser.dialogue_processed.connect(_on_dialogue_processed)
@@ -363,5 +356,4 @@ func _on_screen_exited():
 
 func _on_wait_finished():
 	options_container.show()
-	options_container.get_child(0).show()
 	options_container.get_child(0).grab_focus()

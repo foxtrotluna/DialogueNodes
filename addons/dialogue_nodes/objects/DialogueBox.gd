@@ -2,14 +2,13 @@
 ## A node for displaying branching dialogues, primarily created using the Dialogue Nodes editor.
 class_name DialogueBox
 extends Panel
- 
-
+const Emotion = Character.Emotion
 ## Triggered when a dialogue has started. Passes [param id] of the dialogue tree as defined in the StartNode.
 signal dialogue_started(id : String)
 ## Triggered when a single dialogue block has been processed.
 ## Passes [param speaker] which can be a [String] or a [param Character] resource, a [param dialogue] containing the text to be displayed
 ## and an [param options] list containing the texts for each option.
-signal dialogue_processed(speaker : Variant, dialogue : String, options : Array[String])
+signal dialogue_processed(speaker : Variant, listener: Character, speakerEmotion: Emotion, listenerEmotion: Emotion, dialogue : String, options : Array[String])
 ## Triggered when an option is selected
 signal option_selected(idx : int)
 ## Triggered when a SignalNode is encountered while processing the dialogue.
@@ -31,13 +30,14 @@ signal dialogue_ended
 	set(value):
 		data = value
 		if _dialogue_parser:
-			_dialogue_parser.set_data(data)
+			_dialogue_parser.data = value
 			variables = _dialogue_parser.variables
 			characters = _dialogue_parser.characters
 ## The default start ID to begin dialogue from. This is the value you set in the Dialogue Nodes editor.
 @export var start_id : String
 
 @export_group('Speaker')
+@export var SpeakerTexture : TextureRect
 ## The default color for the speaker label.
 @export var default_speaker_color := Color.WHITE :
 	set(value):
@@ -47,12 +47,14 @@ signal dialogue_ended
 @export var hide_portrait := false :
 	set(value):
 		hide_portrait = value
-		if portrait: portrait.visible = not hide_portrait
+		#if portrait: portrait.visible = not hide_portrait
 ## Sample portrait image that is visible in editor. This will not show in-game.
 @export var sample_portrait := preload('res://addons/dialogue_nodes/icons/Portrait.png') :
 	set(value):
 		sample_portrait = value
-		if portrait: portrait.texture = sample_portrait
+		#if portrait: portrait.texture = sample_portrait
+@export_group('Listener')
+@export var ListenerTexture : TextureRect
 
 @export_group('Dialogue')
 ## Speed of scroll when using joystick/keyboard input
@@ -124,12 +126,6 @@ signal dialogue_ended
 			2:
 				# right
 				_main_container.add_child(options_container)
-## Skip condition checks when processing options in the current dialog.
-@export var skip_options_condition_checks := false :
-	set(value):
-		skip_options_condition_checks = value
-		if _dialogue_parser:
-			_dialogue_parser.skip_options_condition_checks = value
 
 @export_group('Misc')
 ## Hide dialogue box at the end of a dialogue
@@ -140,8 +136,6 @@ signal dialogue_ended
 var variables : Dictionary
 ## Contains all the [param Character] resources loaded from the path in the [member data].
 var characters : Array[Character]
-## Displays the portrait image of the speaker in the [DialogueBox]. Access the speaker's texture by [member DialogueBox.portrait.texture]. This value is automatically set while running a dialogue tree.
-var portrait : TextureRect
 ## Displays the name of the speaker in the [DialogueBox]. Access the speaker name by [code]DialogueBox.speaker_label.text[/code]. This value is automatically set while running a dialogue tree.
 var speaker_label : Label
 ## Displays the dialogue text. This node's value is automatically set while running a dialogue tree.
@@ -149,7 +143,7 @@ var dialogue_label : RichTextLabel
 ## Contains all the option buttons. The currently displayed options are visible while the rest are hidden. This value is automatically set while running a dialogue tree.
 var options_container : BoxContainer
 
-# [param DialogueParser] used for parsing the dialogue [member data].[br]
+# [param DialogueParser] used for parsing the dialogue [member data].
 # NOTE: Using [param DialogueParser] as a child instead of extending from it, because [DialogueBox] needs to extend from [Panel].
 var _dialogue_parser : DialogueParser
 var _main_container : BoxContainer
@@ -174,13 +168,6 @@ func _enter_tree():
 	
 	_main_container = BoxContainer.new()
 	margin_container.add_child(_main_container)
-	
-	portrait = TextureRect.new()
-	_main_container.add_child(portrait)
-	portrait.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
-	portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT
-	portrait.texture = sample_portrait
-	portrait.visible = not hide_portrait
 	
 	_sub_container = BoxContainer.new()
 	_main_container.add_child(_sub_container)
@@ -211,7 +198,6 @@ func _enter_tree():
 	_dialogue_parser.data = data
 	variables = _dialogue_parser.variables
 	characters = _dialogue_parser.characters
-	skip_options_condition_checks = skip_options_condition_checks
 	
 	_dialogue_parser.dialogue_started.connect(_on_dialogue_started)
 	_dialogue_parser.dialogue_processed.connect(_on_dialogue_processed)
@@ -227,7 +213,10 @@ func _ready():
 			_wait_effect = effect
 			_wait_effect.wait_finished.connect(_on_wait_finished)
 			break
-	
+	if SpeakerTexture == null:
+		SpeakerTexture = TextureRect.new()
+	if ListenerTexture == null:
+		ListenerTexture = TextureRect.new()
 	hide()
 
 
@@ -237,9 +226,9 @@ func _process(delta):
 	# scrolling for longer dialogues
 	var scroll_amt := 0.0
 	if options_vertical:
-		scroll_amt = Input.get_axis('ui_left', 'ui_right')
+		scroll_amt = Input.get_axis("ui_left", "ui_right")
 	else:
-		scroll_amt = Input.get_axis('ui_up', 'ui_down')
+		scroll_amt = Input.get_axis("ui_up", "ui_down")
 	
 	if scroll_amt:
 		dialogue_label.get_v_scroll_bar().value += int(scroll_amt * scroll_speed)
@@ -278,26 +267,49 @@ func is_running():
 
 func _on_dialogue_started(id : String):
 	speaker_label.text = ''
-	portrait.texture = null
+	SpeakerTexture.texture = null
+	ListenerTexture.texture = null
 	dialogue_label.text = ''
 	show()
 	dialogue_started.emit(id)
 
+func getEmotionPose(char: Character, emotion: Emotion):
+	match emotion:
+		Emotion.Unknown: return char.pose_unknown
+		Emotion.Neutral: return char.pose_neutral
+		Emotion.Angry: return char.pose_angry
+		Emotion.Quizzical: return char.pose_quizzical
+		Emotion.Explaining: return char.pose_explaining
+		Emotion.Happy: return char.pose_happy
+		Emotion.Excited: return char.pose_excited
+		Emotion.InLove: return char.pose_inlove
+		Emotion.Worried: return char.pose_worried
+		Emotion.Disappointed: return char.pose_disappointed
+	return char.pose_unknown
 
-func _on_dialogue_processed(speaker : Variant, dialogue : String, options : Array[String]):
+func _on_dialogue_processed(speaker : Variant, speakerEmotion: Emotion, listener: Variant, listenerEmotion: Emotion, dialogue : String, options : Array[String]):
 	# set speaker
 	speaker_label.text = ''
-	portrait.texture = null
-	portrait.visible = not hide_portrait
+	SpeakerTexture.texture = null
 	if speaker is Character:
 		speaker_label.text = speaker.name
 		speaker_label.modulate = speaker.color
-		portrait.texture = speaker.image
-		if not speaker.image: portrait.hide()
+		# TODO: Case poses
+		SpeakerTexture.texture = getEmotionPose(speaker,speakerEmotion)
 	elif speaker is String:
 		speaker_label.text = speaker
 		speaker_label.modulate = Color.WHITE
-		portrait.hide()
+		SpeakerTexture.hide()
+	
+	if listener is Character:
+		#speaker_label.text = speaker.name
+		#speaker_label.modulate = speaker.color
+		# TODO: Case poses
+		ListenerTexture.texture = getEmotionPose(listener,listenerEmotion)
+	elif listener is String:
+		#speaker_label.text = speaker
+		#speaker_label.modulate = Color.WHITE
+		ListenerTexture.hide()
 	
 	# set dialogue
 	dialogue_label.text = _dialogue_parser._update_wait_tags(dialogue_label, dialogue)
@@ -340,5 +352,4 @@ func _on_dialogue_ended():
 
 func _on_wait_finished():
 	options_container.show()
-	if Engine.is_editor_hint(): return
 	options_container.get_child(0).grab_focus()
